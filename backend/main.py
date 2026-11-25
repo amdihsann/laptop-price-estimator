@@ -2,14 +2,19 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from pathlib import Path
+from dotenv import load_dotenv
 
 import joblib
 import numpy as np
 import pandas as pd
 import re
-
+import os
 
 from sklearn.base import BaseEstimator, TransformerMixin
+
+load_dotenv()
+
+from database import init_db, log_prediction
 
 class FeatureEngineer(BaseEstimator, TransformerMixin):
     def __init__(self):
@@ -112,9 +117,6 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
 import __main__
 __main__.FeatureEngineer = FeatureEngineer
 
-model_pipeline = None
-_metadata_cache = None
-
 MODEL_PATH   = Path(__file__).parent / "best_ridge_model.joblib"
 DATASET_PATH = Path(__file__).parent / "laptop_price.csv"
 
@@ -152,20 +154,30 @@ try:
 except Exception as e:
     print(f"Error loading dataset {e}")
 
-from database import init_db, log_prediction
-
 app = FastAPI(title="Laptop Price API")
 
 @app.on_event("startup")
 def on_startup():
     init_db()
 
+ALLOWED_ORIGINS = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+_frontend_urls = os.environ.get("FRONTEND_URL", "")
+if _frontend_urls:
+    for url in _frontend_urls.split(","):
+        clean_url = url.strip().rstrip("/")
+        if clean_url:
+            ALLOWED_ORIGINS.append(clean_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], #saat di deploy nanti ganti dengan url domain
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"]
+    allow_methods=["GET", "POST", "PUT", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -184,7 +196,6 @@ class LaptopInput(BaseModel):
     Weight: float
 
 
-# ── Micro-XAI helper ──────────────────────────────────────────────────────────
 def _get_top_drivers(pipeline, input_df: pd.DataFrame, predicted_price: float, top_n: int = 2):
     """
     Introspect the sklearn pipeline to compute per-feature monetary contributions.
@@ -199,7 +210,6 @@ def _get_top_drivers(pipeline, input_df: pd.DataFrame, predicted_price: float, t
 
         steps = {name: step for name, step in pipeline.steps}
 
-        # 1. Run FeatureEngineer to get the engineered DataFrame
         fe_step = None
         ct_step = None
         regressor_step = None
@@ -216,10 +226,8 @@ def _get_top_drivers(pipeline, input_df: pd.DataFrame, predicted_price: float, t
 
         engineered_df = fe_step.transform(input_df)
 
-        # 2. Get processed vector from ColumnTransformer
         X_processed = ct_step.transform(engineered_df)
 
-        # 3. Unwrap TransformedTargetRegressor → Ridge if present
         try:
             from sklearn.compose import TransformedTargetRegressor
             if isinstance(regressor_step, TransformedTargetRegressor):
@@ -236,11 +244,8 @@ def _get_top_drivers(pipeline, input_df: pd.DataFrame, predicted_price: float, t
         if X_processed.shape[1] != len(coef):
             return []
 
-        # 5. Compute log-scale contributions per feature, then convert to price scale.
-        # Ridge predicts log(price); predicted_price = exp(log_pred).
-        # Contribution_i in price space ≈ predicted_price * (coef_i * x_i) / sum(coef_j * x_j)
         x_vec = np.asarray(X_processed[0])
-        log_contributions = coef * x_vec          # each feature's share of log(price)
+        log_contributions = coef * x_vec       
         total_log = log_contributions.sum()
 
         if total_log == 0:
@@ -248,7 +253,6 @@ def _get_top_drivers(pipeline, input_df: pd.DataFrame, predicted_price: float, t
 
         price_contributions = predicted_price * (log_contributions / total_log)
 
-        # 6. Build and sort by positive contribution
         drivers = [
             {"feature": str(feature_names[i]), "contribution_eur": round(float(price_contributions[i]), 2)}
             for i in range(len(feature_names))

@@ -19,17 +19,35 @@ const INITIAL_FORM = {
   Weight: "",
 };
 
+/* ── Reusable field components ─────────────────────────────────────────────── */
+function FieldLabel({ children }) {
+  return (
+    <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+      {children}
+    </label>
+  );
+}
+
+const inputCls =
+  "w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 " +
+  "focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition";
+
+const selectCls =
+  "w-full bg-white border border-slate-200 rounded-xl px-3 py-2.5 text-sm text-slate-800 " +
+  "focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition " +
+  "disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed";
+
 function Select({ name, label, options, value, onChange, disabled }) {
   return (
     <div>
-      <label className="block text-sm font-semibold mb-1">{label}</label>
+      <FieldLabel>{label}</FieldLabel>
       <select
         name={name}
         value={value}
         onChange={onChange}
         disabled={disabled || options.length === 0}
         required
-        className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 bg-white disabled:bg-gray-100 disabled:cursor-not-allowed"
+        className={selectCls}
       >
         <option value="">— select —</option>
         {options.map((opt) => (
@@ -42,14 +60,15 @@ function Select({ name, label, options, value, onChange, disabled }) {
   );
 }
 
+/* ── Main component ─────────────────────────────────────────────────────────── */
 export default function Home() {
   const [formData, setFormData]       = useState(INITIAL_FORM);
   const [metadata, setMetadata]       = useState(null);
   const [metaLoading, setMetaLoading] = useState(true);
   const [metaError, setMetaError]     = useState("");
 
-  const [result, setResult]   = useState(null);   // { predicted_price, lower_bound, upper_bound, top_drivers }
-  const [loading, setLoading] = useState(false);
+  const [result, setResult]       = useState(null);
+  const [loading, setLoading]     = useState(false);
   const [errorText, setErrorText] = useState("");
 
   // ── Fetch metadata once on mount ──────────────────────────────────────────
@@ -83,8 +102,6 @@ export default function Home() {
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleChange = (e) => {
     const { name, value } = e.target;
-
-    // When Company changes, reset all company-dependent dropdowns
     if (name === "Company") {
       setFormData((prev) => ({
         ...prev,
@@ -96,7 +113,6 @@ export default function Home() {
       }));
       return;
     }
-
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
@@ -134,183 +150,301 @@ export default function Home() {
     }
   };
 
+  // ── XAI bar scale ──────────────────────────────────────────────────────────
+  const maxContribution =
+    result?.top_drivers?.length > 0
+      ? Math.max(...result.top_drivers.map((d) => d.contribution_eur))
+      : 1;
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <main className="min-h-screen bg-gray-50 flex items-center justify-center p-6 text-gray-800">
-      <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-4xl">
-        <h1 className="text-3xl font-bold mb-8 text-center text-blue-900">
-          Machine Learning: Laptop Price Prediction
-        </h1>
-
+    <main className="min-h-screen bg-slate-50 text-slate-800">
+      {/* ── Top nav bar ── */}
+      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center gap-3">
+        <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
+          <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </div>
+        <div>
+          <p className="text-sm font-bold text-slate-800 leading-none">LaptopAI Valuator</p>
+          <p className="text-xs text-slate-400 mt-0.5">ML-powered price prediction</p>
+        </div>
         {metaLoading && (
-          <p className="text-center text-gray-500 mb-6 animate-pulse">Loading options from server…</p>
+          <span className="ml-auto text-xs text-indigo-500 animate-pulse font-medium">Connecting to API…</span>
         )}
         {metaError && (
-          <p className="text-center text-red-600 mb-6 text-sm">⚠ {metaError}</p>
+          <span className="ml-auto text-xs text-red-500 font-medium">⚠ API Error</span>
         )}
+      </header>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {/* ── Page body ── */}
+      <div className="max-w-7xl mx-auto px-4 md:px-8 py-8">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
 
-            {/* ── Left column ── */}
-            <div className="space-y-4">
-              <Select
-                name="Company" label="Company (Brand)"
-                options={opts.Company} value={formData.Company}
-                onChange={handleChange} disabled={metaLoading}
-              />
+          {/* ════════════════ LEFT — Specifications Form ════════════════ */}
+          <div className="md:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            {/* Card header */}
+            <div className="px-6 py-4 border-b border-slate-100">
+              <h2 className="text-base font-bold text-slate-800">Laptop Specifications</h2>
+              <p className="text-xs text-slate-400 mt-0.5">Fill in all fields to generate an AI price valuation</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="p-6 space-y-5">
+
+              {/* Row 1: Company + TypeName */}
+              <div className="grid grid-cols-2 gap-4">
+                <Select
+                  name="Company" label="Brand"
+                  options={opts.Company} value={formData.Company}
+                  onChange={handleChange} disabled={metaLoading}
+                />
+                <Select
+                  name="TypeName" label="Type"
+                  options={opts.TypeName} value={formData.TypeName}
+                  onChange={handleChange} disabled={metaLoading || !formData.Company}
+                />
+              </div>
+
+              {/* Row 2: Product (full width) */}
               <div>
-                <label className="block text-sm font-semibold mb-1">Product</label>
+                <FieldLabel>Product Name</FieldLabel>
                 <input
                   name="Product" type="text" required
                   value={formData.Product} onChange={handleChange}
-                  className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., MacBook Pro"
+                  className={inputCls}
+                  placeholder="e.g., MacBook Pro 14"
                 />
               </div>
-              <Select
-                name="TypeName" label="Type Name"
-                options={opts.TypeName} value={formData.TypeName}
-                onChange={handleChange} disabled={metaLoading || !formData.Company}
-              />
-              <div>
-                <label className="block text-sm font-semibold mb-1">Inches</label>
-                <input
-                  name="Inches" type="number" step="0.1" required
-                  value={formData.Inches} onChange={handleChange}
-                  className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 13.3"
+
+              {/* Row 3: CPU + GPU */}
+              <div className="grid grid-cols-1 gap-4">
+                <Select
+                  name="Cpu" label="Processor (CPU)"
+                  options={opts.Cpu} value={formData.Cpu}
+                  onChange={handleChange} disabled={metaLoading || !formData.Company}
+                />
+                <Select
+                  name="Gpu" label="Graphics (GPU)"
+                  options={opts.Gpu} value={formData.Gpu}
+                  onChange={handleChange} disabled={metaLoading || !formData.Company}
                 />
               </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Screen Resolution</label>
-                <input
-                  name="ScreenResolution" type="text" required
-                  value={formData.ScreenResolution} onChange={handleChange}
-                  className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., IPS Panel Retina Display 2560x1600"
-                />
-              </div>
-              <Select
-                name="OpSys" label="Operating System (OpSys)"
-                options={opts.OpSys} value={formData.OpSys}
-                onChange={handleChange} disabled={metaLoading || !formData.Company}
-              />
-            </div>
 
-            {/* ── Right column ── */}
-            <div className="space-y-4">
-              <Select
-                name="Cpu" label="CPU"
-                options={opts.Cpu} value={formData.Cpu}
-                onChange={handleChange} disabled={metaLoading || !formData.Company}
-              />
-              <div>
-                <label className="block text-sm font-semibold mb-1">RAM (GB)</label>
-                <input
-                  name="Ram" type="number" required
-                  value={formData.Ram} onChange={handleChange}
-                  className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 8"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-semibold mb-1">Memory</label>
-                <input
-                  name="Memory" type="text" required
-                  value={formData.Memory} onChange={handleChange}
-                  className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 128GB SSD"
-                />
-              </div>
-              <Select
-                name="Gpu" label="GPU"
-                options={opts.Gpu} value={formData.Gpu}
-                onChange={handleChange} disabled={metaLoading || !formData.Company}
-              />
-              <div>
-                <label className="block text-sm font-semibold mb-1">Weight (kg)</label>
-                <input
-                  name="Weight" type="number" step="0.01" required
-                  value={formData.Weight} onChange={handleChange}
-                  className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., 1.37"
-                />
-              </div>
-            </div>
-
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading || metaLoading}
-            className={`w-full mt-6 text-white font-bold py-3 px-4 rounded transition-colors ${
-              loading || metaLoading ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
-            }`}
-          >
-            {loading ? "Memproses Model ML…" : "Price Prediction"}
-          </button>
-        </form>
-
-        {errorText && (
-          <div className="mt-6 p-4 bg-red-100 text-red-700 border border-red-400 rounded text-sm font-mono">
-            {errorText}
-          </div>
-        )}
-
-        {result && (
-          <div className="mt-6 space-y-4">
-            {/* ── Price card ── */}
-            <div className="p-6 bg-green-50 border-2 border-green-500 rounded text-center shadow-inner">
-              <p className="text-sm text-green-700 font-semibold uppercase tracking-wide mb-1">
-                Estimated Price
-              </p>
-              <p className="text-4xl font-extrabold text-green-900">
-                {idr(result.predicted_price)}
-              </p>
-              <p className="text-lg text-green-800 mt-1">
-                € {result.predicted_price.toLocaleString("id-ID")}
-              </p>
-
-              {/* ── Price range ── */}
-              <div className="mt-4 pt-4 border-t border-green-300">
-                <p className="text-xs text-green-700 font-semibold uppercase tracking-wide mb-2">
-                  Confidence Range (± €{(328.90).toLocaleString("id-ID")})
-                </p>
-                <div className="flex justify-center items-center gap-3 text-sm font-medium text-green-800">
-                  <span className="bg-green-100 px-3 py-1 rounded-full">
-                    Low: {idr(result.lower_bound)}
-                  </span>
-                  <span className="text-green-500 font-bold">—</span>
-                  <span className="bg-green-100 px-3 py-1 rounded-full">
-                    High: {idr(result.upper_bound)}
-                  </span>
+              {/* Row 4: RAM + Storage */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel>RAM (GB)</FieldLabel>
+                  <input
+                    name="Ram" type="number" required
+                    value={formData.Ram} onChange={handleChange}
+                    className={inputCls} placeholder="e.g., 16"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Storage</FieldLabel>
+                  <input
+                    name="Memory" type="text" required
+                    value={formData.Memory} onChange={handleChange}
+                    className={inputCls} placeholder="e.g., 512GB SSD"
+                  />
                 </div>
               </div>
-            </div>
 
-            {/* ── Top drivers card ── */}
-            {result.top_drivers && result.top_drivers.length > 0 && (
-              <div className="p-5 bg-blue-50 border border-blue-200 rounded">
-                <p className="text-sm font-bold text-blue-900 mb-3">
-                  Top Price Drivers
-                </p>
-                <ul className="space-y-2">
-                  {result.top_drivers.map((d, i) => (
-                    <li key={i} className="flex justify-between items-center text-sm">
-                      <span className="text-blue-800 font-medium truncate max-w-[60%]" title={d.feature}>
-                        #{i + 1} {d.feature.replace(/^(num__|cat__)/, "")}
-                      </span>
-                      <span className="text-blue-900 font-bold whitespace-nowrap">
-                        +{idr(d.contribution_eur)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
+              {/* Row 5: Screen Size + Screen Resolution */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <FieldLabel>Screen Size (in)</FieldLabel>
+                  <input
+                    name="Inches" type="number" step="0.1" required
+                    value={formData.Inches} onChange={handleChange}
+                    className={inputCls} placeholder="e.g., 13.3"
+                  />
+                </div>
+                <div>
+                  <FieldLabel>Screen Resolution</FieldLabel>
+                  <input
+                    name="ScreenResolution" type="text" required
+                    value={formData.ScreenResolution} onChange={handleChange}
+                    className={inputCls} placeholder="e.g., 2560x1600"
+                  />
+                </div>
               </div>
-            )}
+
+              {/* Row 6: OpSys + Weight */}
+              <div className="grid grid-cols-2 gap-4">
+                <Select
+                  name="OpSys" label="Operating System"
+                  options={opts.OpSys} value={formData.OpSys}
+                  onChange={handleChange} disabled={metaLoading || !formData.Company}
+                />
+                <div>
+                  <FieldLabel>Weight (kg)</FieldLabel>
+                  <input
+                    name="Weight" type="number" step="0.01" required
+                    value={formData.Weight} onChange={handleChange}
+                    className={inputCls} placeholder="e.g., 1.37"
+                  />
+                </div>
+              </div>
+
+              {/* Submit */}
+              <button
+                type="submit"
+                disabled={loading || metaLoading}
+                className={`w-full py-3 rounded-xl text-sm font-bold tracking-wide transition-all ${
+                  loading || metaLoading
+                    ? "bg-slate-200 text-slate-400 cursor-not-allowed"
+                    : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-lg"
+                }`}
+              >
+                {loading ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    Analysing…
+                  </span>
+                ) : (
+                  "Generate AI Valuation →"
+                )}
+              </button>
+
+              {/* Error */}
+              {errorText && (
+                <div className="flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-mono">
+                  <span className="mt-0.5">⚠</span>
+                  <span>{errorText}</span>
+                </div>
+              )}
+            </form>
           </div>
-        )}
+
+          {/* ════════════════ RIGHT — AI Price Analytics ════════════════ */}
+          <div className="md:col-span-5 md:sticky md:top-6">
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
+              {/* Card header */}
+              <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-slate-800">AI Price Analytics</h2>
+                  <p className="text-xs text-slate-400 mt-0.5">Powered by Ridge Regression ML</p>
+                </div>
+                <span className="text-xs font-semibold bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full">
+                  RMSE ±€328.90
+                </span>
+              </div>
+
+              <div className="p-6">
+                {/* ── Empty state ── */}
+                {!result && !loading && (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <div className="w-14 h-14 bg-slate-100 rounded-2xl flex items-center justify-center mb-4">
+                      <svg className="w-7 h-7 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v12m-3-2.818l.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.725 0-1.45-.22-2.003-.659-1.106-.879-1.106-2.303 0-3.182s2.9-.879 4.006 0l.415.33M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <p className="text-sm font-semibold text-slate-600">No valuation yet</p>
+                    <p className="text-xs text-slate-400 mt-1 max-w-[200px]">
+                      Enter laptop specifications to generate an AI valuation
+                    </p>
+                  </div>
+                )}
+
+                {/* ── Loading shimmer ── */}
+                {loading && (
+                  <div className="space-y-3 py-4 animate-pulse">
+                    <div className="h-8 bg-slate-100 rounded-xl w-3/4 mx-auto" />
+                    <div className="h-4 bg-slate-100 rounded-xl w-1/2 mx-auto" />
+                    <div className="h-px bg-slate-100 my-4" />
+                    <div className="h-4 bg-slate-100 rounded-xl w-full" />
+                    <div className="h-4 bg-slate-100 rounded-xl w-5/6" />
+                  </div>
+                )}
+
+                {/* ── Results ── */}
+                {result && !loading && (
+                  <div className="space-y-5">
+
+                    {/* Primary price */}
+                    <div className="text-center">
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">
+                        Estimated Market Price
+                      </p>
+                      <p className="text-4xl font-extrabold text-slate-900 tracking-tight">
+                        {idr(result.predicted_price)}
+                      </p>
+                      <p className="text-sm text-slate-400 mt-1">
+                        € {result.predicted_price.toLocaleString("id-ID")}
+                      </p>
+                    </div>
+
+                    {/* Confidence interval */}
+                    <div>
+                      <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
+                        Confidence Range
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5 text-center">
+                          <p className="text-xs text-blue-500 font-semibold mb-0.5">Floor</p>
+                          <p className="text-sm font-bold text-blue-900 leading-tight">
+                            {idr(result.lower_bound)}
+                          </p>
+                        </div>
+                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2.5 text-center">
+                          <p className="text-xs text-emerald-500 font-semibold mb-0.5">Ceiling</p>
+                          <p className="text-sm font-bold text-emerald-900 leading-tight">
+                            {idr(result.upper_bound)}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Micro-XAI drivers */}
+                    {result.top_drivers?.length > 0 && (
+                      <div>
+                        <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">
+                          Top Price Drivers
+                        </p>
+                        <div className="space-y-3">
+                          {result.top_drivers.map((d, i) => {
+                            const barPct = Math.round((d.contribution_eur / maxContribution) * 100);
+                            const label = d.feature.replace(/^(num__|cat__)/, "");
+                            return (
+                              <div key={i}>
+                                <div className="flex justify-between items-baseline mb-1">
+                                  <span className="text-xs font-semibold text-slate-700 truncate max-w-[55%]" title={label}>
+                                    #{i + 1} {label}
+                                  </span>
+                                  <span className="text-xs font-bold text-indigo-700 whitespace-nowrap ml-2">
+                                    +{idr(d.contribution_eur)}
+                                  </span>
+                                </div>
+                                {/* Weight bar */}
+                                <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-indigo-500 rounded-full transition-all duration-500"
+                                    style={{ width: `${barPct}%` }}
+                                  />
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Disclaimer */}
+                    <p className="text-center text-xs text-slate-400 pt-2 border-t border-slate-100">
+                      Prediction based on historical market data. Results are estimates only.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+        </div>
       </div>
     </main>
   );
