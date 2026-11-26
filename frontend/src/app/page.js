@@ -71,6 +71,53 @@ export default function Home() {
   const [loading, setLoading]     = useState(false);
   const [errorText, setErrorText] = useState("");
 
+  const [isWakingUp, setIsWakingUp]   = useState(false);
+  const [wakeElapsed, setWakeElapsed] = useState(0);
+
+  const isBusy = metaLoading || loading;
+
+  useEffect(() => {
+    if (!isBusy) {
+      setIsWakingUp(false);
+      setWakeElapsed(0);
+      return;
+    }
+
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      setWakeElapsed(elapsed);
+      if (elapsed >= 3) {
+        setIsWakingUp(true);
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isBusy]);
+
+  const fetchMetadata = useCallback(() => {
+    setMetaLoading(true);
+    setMetaError("");
+
+    fetch(`${API}/metadata`)
+      .then((r) => {
+        if (!r.ok) throw new Error(`Metadata fetch failed: ${r.status}`);
+        return r.json();
+      })
+      .then((data) => {
+        setMetadata(data);
+        setMetaLoading(false);
+      })
+      .catch((err) => {
+        setMetaError(err.message);
+        setMetaLoading(false);
+      });
+  }, []);
+
+  useEffect(() => {
+    fetchMetadata();
+  }, [fetchMetadata]);
+
   // ── Fetch metadata once on mount ──────────────────────────────────────────
   useEffect(() => {
     fetch(`${API}/metadata`)
@@ -171,10 +218,12 @@ export default function Home() {
           <p className="text-xs text-slate-400 mt-0.5">ML-powered price prediction</p>
         </div>
         {metaLoading && (
-          <span className="ml-auto text-xs text-indigo-500 animate-pulse font-medium">Connecting to API…</span>
+          <span className="ml-auto text-xs text-indigo-600 animate-pulse font-medium">
+            {isWakingUp ? `Waking up ML server… (${wakeElapsed}s)` : "Connecting to API…"}
+          </span>
         )}
         {metaError && (
-          <span className="ml-auto text-xs text-red-500 font-medium">⚠ API Error</span>
+          <span className="ml-auto text-xs text-red-500 font-medium">API Offline</span>
         )}
       </header>
 
@@ -189,6 +238,47 @@ export default function Home() {
               <h2 className="text-base font-bold text-slate-800">Laptop Specifications</h2>
               <p className="text-xs text-slate-400 mt-0.5">Fill in all fields to generate an AI price valuation</p>
             </div>
+
+            {/* ── Cold-Start / Connection Banner ── */}
+            {metaLoading && (
+              <div
+                className={`mx-6 mt-5 p-3.5 rounded-xl border text-xs flex items-start gap-3 transition-colors ${
+                  isWakingUp
+                    ? "bg-amber-50 border-amber-200 text-amber-800"
+                    : "bg-indigo-50/70 border-indigo-100 text-indigo-700"
+                }`}
+              >
+                <svg className="animate-spin w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                <div>
+                  <p className="font-semibold">
+                    {isWakingUp
+                      ? `Waking up ML server… (${wakeElapsed}s / ~60s)`
+                      : "Loading laptop specifications…"}
+                  </p>
+                  <p className="opacity-80 mt-0.5 leading-relaxed">
+                    {isWakingUp
+                      ? "Free-tier backend sleeps after 15 mins of inactivity. Form fields will unlock automatically once ready."
+                      : "Fetching brand and hardware dependencies from the model metadata."}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {metaError && (
+              <div className="mx-6 mt-5 p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-center justify-between gap-3">
+                <span>⚠ Failed to reach ML server ({metaError}).</span>
+                <button
+                  type="button"
+                  onClick={fetchMetadata}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shrink-0 transition"
+                >
+                  Retry
+                </button>
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="p-6 space-y-5">
 
@@ -298,13 +388,14 @@ export default function Home() {
                     : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-md hover:shadow-lg"
                 }`}
               >
+                {/* Di dalam <button type="submit"> saat loading === true */}
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
                     <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
                     </svg>
-                    Analysing…
+                    {isWakingUp ? `Waking server & analysing… (${wakeElapsed}s)` : "Analysing…"}
                   </span>
                 ) : (
                   "Generate AI Valuation →"
@@ -353,15 +444,22 @@ export default function Home() {
 
                 {/* ── Loading shimmer ── */}
                 {loading && (
-                  <div className="space-y-3 py-4 animate-pulse">
-                    <div className="h-8 bg-slate-100 rounded-xl w-3/4 mx-auto" />
-                    <div className="h-4 bg-slate-100 rounded-xl w-1/2 mx-auto" />
-                    <div className="h-px bg-slate-100 my-4" />
-                    <div className="h-4 bg-slate-100 rounded-xl w-full" />
-                    <div className="h-4 bg-slate-100 rounded-xl w-5/6" />
+                  <div className="space-y-3 py-4">
+                    <div className="space-y-3 animate-pulse">
+                      <div className="h-8 bg-slate-100 rounded-xl w-3/4 mx-auto" />
+                      <div className="h-4 bg-slate-100 rounded-xl w-1/2 mx-auto" />
+                      <div className="h-px bg-slate-100 my-4" />
+                      <div className="h-4 bg-slate-100 rounded-xl w-full" />
+                      <div className="h-4 bg-slate-100 rounded-xl w-5/6" />
+                    </div>
+                    {isWakingUp && (
+                      <p className="text-center text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 mt-4">
+                        Server went idle and is waking back up ({wakeElapsed}s / ~60s)…
+                      </p>
+                    )}
                   </div>
                 )}
-
+                
                 {/* ── Results ── */}
                 {result && !loading && (
                   <div className="space-y-5">
