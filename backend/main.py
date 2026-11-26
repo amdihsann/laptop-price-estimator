@@ -10,6 +10,10 @@ import pandas as pd
 import re
 import os
 
+from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import FunctionTransformer
 from sklearn.base import BaseEstimator, TransformerMixin
 
 load_dotenv()
@@ -126,6 +130,9 @@ try:
 except Exception as e:
     print(f"Error loading model {e}")
 
+model_pipeline = None
+_metadata_cache = None
+
 try:
     _df = pd.read_csv(DATASET_PATH, sep=";", encoding="latin-1")
 
@@ -203,11 +210,6 @@ def _get_top_drivers(pipeline, input_df: pd.DataFrame, predicted_price: float, t
     Returns a list of {feature, contribution_eur} dicts sorted by descending contribution.
     """
     try:
-        from sklearn.pipeline import Pipeline
-        from sklearn.compose import ColumnTransformer
-        from sklearn.linear_model import Ridge
-        from sklearn.preprocessing import FunctionTransformer
-
         steps = {name: step for name, step in pipeline.steps}
 
         fe_step = None
@@ -267,6 +269,14 @@ def _get_top_drivers(pipeline, input_df: pd.DataFrame, predicted_price: float, t
 
 MODEL_RMSE = 328.90
 
+@app.get("/")
+def root():
+    return {"service": "Laptop Price Estimator API", "status": "running"}
+
+@app.get("/health")
+def health_check():
+    return {"status": "healthy"}
+
 @app.post("/predict")
 async def predic_price(data: LaptopInput, background_tasks: BackgroundTasks):
     try:
@@ -306,3 +316,5 @@ async def get_metadata():
     if _metadata_cache is None:
         raise HTTPException(status_code=503, detail="Metadata not available: dataset failed to load")
     return _metadata_cache
+
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 const EURO_TO_IDR_RATE = 20474;
 const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
@@ -459,7 +459,7 @@ export default function Home() {
                     )}
                   </div>
                 )}
-                
+
                 {/* ── Results ── */}
                 {result && !loading && (
                   <div className="space-y-5">
