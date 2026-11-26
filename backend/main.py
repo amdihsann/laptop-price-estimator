@@ -112,10 +112,7 @@ class FeatureEngineer(BaseEstimator, TransformerMixin):
         # Drop columns that are already represented by new features
         columns_to_drop = ['ScreenResolution', 'Cpu', 'Memory', 'Gpu', 'Product', 'laptop_ID']
         df_processed = df_processed.drop(columns=columns_to_drop, errors='ignore')
-
-        # Removed: df_processed = df_processed.dropna(subset=['CPU_Speed_GHz'])
-        # NaNs will now be handled by SimpleImputer in the ColumnTransformer
-
+        
         return df_processed
     
 import __main__
