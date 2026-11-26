@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 
 const EURO_TO_IDR_RATE = 20474;
-const API = "http://localhost:8000";
+const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
 
 const INITIAL_FORM = {
   Company: "",
