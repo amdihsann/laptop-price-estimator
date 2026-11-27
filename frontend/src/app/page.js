@@ -3,7 +3,66 @@
 import { useState, useEffect, useCallback } from "react";
 
 const EURO_TO_IDR_RATE = 20474;
+
 const API = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000").replace(/\/$/, "");
+
+function sleepWithSignal(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("Aborted", "AbortError"));
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+
+    function onAbort() {
+      clearTimeout(timer);
+      reject(new DOMException("Aborted", "AbortError"));
+    }
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function fetchWithWakeupRetry(
+  url,
+  options = {},
+  maxWaitMs = 75000,
+  retryIntervalMs = 4000
+) {
+  const startedAt = Date.now();
+
+  while (true) {
+    try {
+      const response = await fetch(url, options);
+
+      // Ulangi HANYA jika gateway/proxy SnapDeploy membalas 502/503/504 saat proses wake-up
+      if ([502, 503, 504].includes(response.status) && Date.now() - startedAt < maxWaitMs) {
+        await sleepWithSignal(retryIntervalMs, options.signal);
+        continue;
+      }
+
+      return response;
+    } catch (err) {
+      // Hentikan seketika jika request dibatalkan oleh AbortController (komponen unmount)
+      if (err.name === "AbortError") {
+        throw err;
+      }
+
+      // TypeError ("Failed to fetch") muncul saat proxy SnapDeploy mengirim halaman
+      // HTML waking-up (503) tanpa header Access-Control-Allow-Origin
+      if (err instanceof TypeError && Date.now() - startedAt < maxWaitMs) {
+        await sleepWithSignal(retryIntervalMs, options.signal);
+        continue;
+      }
+
+      throw err;
+    }
+  }
+}
 
 const INITIAL_FORM = {
   Company: "",
@@ -95,11 +154,13 @@ export default function Home() {
     return () => clearInterval(timer);
   }, [isBusy]);
 
-  const fetchMetadata = useCallback(() => {
+  const fetchMetadata = useCallback((signal) => {
     setMetaLoading(true);
     setMetaError("");
 
-    fetch(`${API}/metadata`)
+    const fetchOptions = signal instanceof AbortSignal ? { signal } : {};
+
+    fetchWithWakeupRetry(`${API}/metadata`, fetchOptions)
       .then((r) => {
         if (!r.ok) throw new Error(`Metadata fetch failed: ${r.status}`);
         return r.json();
@@ -109,31 +170,18 @@ export default function Home() {
         setMetaLoading(false);
       })
       .catch((err) => {
+        if (err.name === "AbortError") return;
         setMetaError(err.message);
         setMetaLoading(false);
       });
   }, []);
 
   useEffect(() => {
-    fetchMetadata();
+    const controller = new AbortController();
+    fetchMetadata(controller.signal);
+
+    return () => controller.abort();
   }, [fetchMetadata]);
-
-  // ── Fetch metadata once on mount ──────────────────────────────────────────
-  useEffect(() => {
-    fetch(`${API}/metadata`)
-      .then((r) => {
-        if (!r.ok) throw new Error(`Metadata fetch failed: ${r.status}`);
-        return r.json();
-      })
-      .then((data) => {
-        setMetadata(data);
-        setMetaLoading(false);
-      })
-      .catch((err) => {
-        setMetaError(err.message);
-        setMetaLoading(false);
-      });
-  }, []);
 
   // ── Cascading option derivation ────────────────────────────────────────────
   const companyRules = formData.Company && metadata?.dependencies?.by_company?.[formData.Company];
@@ -174,7 +222,7 @@ export default function Home() {
     setResult(null);
 
     try {
-      const response = await fetch(`${API}/predict`, {
+      const response = await fetchWithWakeupRetry(`${API}/predict`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -186,8 +234,15 @@ export default function Home() {
         }),
       });
 
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Gagal mendapatkan prediksi dari server.");
+      const isJson = response.headers.get("content-type")?.includes("application/json");
+      const data = isJson ? await response.json() : {};
+
+      if (!response.ok) {
+        throw new Error(
+          data.detail ||
+            `Server tidak merespons (${response.status}). Pastikan kuota aktif SnapDeploy belum habis.`
+        );
+      }
 
       setResult(data);
     } catch (err) {
