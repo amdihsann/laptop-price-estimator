@@ -40,20 +40,42 @@ engine         = None
 SessionLocal   = None
 
 if DATABASE_URL:
-    engine       = create_engine(DATABASE_URL, pool_pre_ping=True)
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=1800,
+        pool_size=1,
+        max_overflow=0,
+        pool_timeout=5,
+        connect_args={
+            "connect_timeout": 5
+        }
+    )
+    
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
-def init_db() -> None:
-    """Create tables if the database is configured. Safe to call at startup."""
+def init_db() -> bool:
+    """Initialize database and return actual readiness status."""
+
     if engine is None:
-        print("DATABASE_URL not set — prediction logging disabled.")
-        return
+        print("DATABASE_URL not configured. Logging disabled.")
+        return False
+
     try:
         Base.metadata.create_all(bind=engine)
-        print("Database tables ready.")
-    except Exception as exc:
-        print(f"Database init error (logging will be disabled): {exc}")
+
+        # Verify actual database connectivity
+        with engine.connect() as connection:
+            connection.exec_driver_sql("SELECT 1")
+
+        print("Database connection verified. Tables ready.")
+        return True
+
+    except Exception:
+        import logging
+        logging.exception("Database initialization failed.")
+        return False
 
 
 def log_prediction(
